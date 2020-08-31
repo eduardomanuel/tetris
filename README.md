@@ -1,2 +1,2 @@
 # tetris
-My implementation of the tetris game
+My (semi-working) implementation of the tetris game
