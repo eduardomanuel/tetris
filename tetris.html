@@ -77,17 +77,19 @@
                   dialog.show();
               },
 
+            
+
               drawScore: function(){
                   let ctx = gameModel.scoreBoard.getContext("2d");
+                  let gameTimeInSeconds = Math.round((Date.now() - gameModel.gameStartTime)/1000);
                   gameModel.scoreBoard.height = gameModel.gameCanvas.height; 
                   
                   ctx.strokeStyle = "green";
-                  ctx.strokeRect(1,1,gameModel.scoreBoard.width-1,50);
+                  ctx.strokeRect(1,1,gameModel.scoreBoard.width-1,100);
                   ctx.fillStyle = "green";
-                  ctx.font = "20px Consolas";
-                  ctx.fillText(`LINES COMPLETED: ${gameModel.gameScore}`,10,25);
-                  
-                  
+                  ctx.font = "20px Helvetica";
+                  ctx.fillText(`LINES COMPLETED: ${gameModel.gameScore}`,15,30);
+                  ctx.fillText(`Time elapsed: ${gameTimeInSeconds}`,15,70);  
               },
 
               highLightFallingTetro: function(){
@@ -120,22 +122,33 @@
                   ctx.closePath();
               },
 
-              higLightCompletedRow: function(rowNumber){
+              // needs tp be synched with the anmication frames
+              higLightCompletedRow_old: function(rowNumber){
                   let col = 0;
                   let last = Date.now();
-                  let animationWait = 10;
+                  let animationWait = 100;
                   while(col < gameModel.GAME_GRID_DIMENSIONS.width){
                        let elapsedTime = Date.now() - last;
                        if(elapsedTime > animationWait){
                           gameModel.gameGrid[rowNumber][col++] = 2; //make it alternate color
                           elapsedTime = 0;
-                          this.drawGrid();
+                          last = Date.now();
+                          view.drawGrid(1);
+                          console.log("deleting completed column :" + (col-0) + " t=" + Date.now() );
                        }
                   }
                   gameModel.gameGrid[rowNumber].fill(0);
               },
 
-              drawGrid: function () {
+              highLightCompletedCell: function(rowNumber){
+                 let completedCells = gameModel.gameGrid[rowNumber].filter(e => e==2).length; 
+                 if( completedCells < gameModel.GAME_GRID_DIMENSIONS.width)
+                    gameModel.gameGrid[rowNumber][gameModel.gameGrid[rowNumber].indexOf(1)] = 2;
+                   
+              }, 
+              drawGrid: function (test) {
+                  if(test) 
+                    console.log("called draw grid for completed rows");
                   let ctx = gameModel.gameCanvas.getContext("2d");
 
                   this.drawWalls();
@@ -181,7 +194,9 @@
               gameGrid : [],
               gameStack: [],
               STEP_WAIT : 500, // (milliseconds),
-              gameScore: 0
+              gameScore: 0,
+              gameStartTime: 0,
+              completedRows :[]
           };
 
           let gameController = {
@@ -212,6 +227,7 @@
                       default:
                           console.log(e);
                   }
+                //   console.log(`timestamp:[${Date.now()}]row:[${gameModel.currentTetro.row}]  col:[${gameModel.currentTetro.col}]`);
               },
 
 
@@ -269,7 +285,14 @@
 
 
               cleanGameGrid: function() {
-                 gameModel.gameGrid = JSON.parse(JSON.stringify(gameModel.gameStack));
+                 // gameModel.gameGrid = JSON.parse(JSON.stringify(gameModel.gameStack));
+
+                 for(let r=0; r < gameModel.gameGrid.length; r++){
+                    for(let c=0; c < gameModel.gameGrid[r].length; c++){
+                        if(gameModel.gameGrid[r][c] != 2) 
+                            gameModel.gameGrid[r][c] = gameModel.gameStack[r][c]; 
+                    }
+                 }
               },
 
               updateTetroInMatrix: function(){
@@ -389,6 +412,12 @@
 
               },
 
+              updateTetroMovement: function(){
+                this.cleanGameGrid();
+                this.updateTetroInMatrix();
+                view.highLightFallingTetro();
+              },
+
               moveTetro: function(){
                   if(this.tetroCanMoveDown()) gameModel.currentTetro.row++;
                   else {
@@ -396,20 +425,20 @@
                           this.gameOver();
                       }
                       else this.resetTetro();
-                  }
-                  this.cleanGameGrid();
-                  this.updateTetroInMatrix();
-                  view.highLightFallingTetro();
+                  } 
+                  this.updateTetroMovement();               
               },
 
 
 
               moveTetroLeft: function(){
                  if(this.tetroCanMoveLeft()) gameModel.currentTetro.col--;
+                 this.updateTetroMovement();
               },
 
               moveTetroRight: function(){
                  if(this.tetroCanMoveRight())gameModel.currentTetro.col++;
+                 this.updateTetroMovement();
               },
 
               tetroCanRotate: function(){
@@ -430,18 +459,34 @@
               rotateTetro: function(){
                 if(this.tetroCanRotate()) 
                     gameModel.currentTetro.blocks = this.rotateMatrix(gameModel.currentTetro.blocks);
+                this.updateTetroMovement();
               },
 
               updateScore: function(completedRowCount){
                   gameModel.gameScore += completedRowCount; 
               },
 
-              removeCompletedRows: function(completedRows){
+              removeCompletedRows_old: function(completedRows){
                   for(let i=0; i < completedRows.length; i++){
                     view.higLightCompletedRow(completedRows[i]);
                     gameModel.gameStack.splice(completedRows[i],1);
                     gameModel.gameStack.splice(0,0,Array(gameModel.GAME_GRID_DIMENSIONS.width).fill(0));
                     //gameModel.gameGrid.push(Array(gameModel.GAME_GRID_DIMENSIONS.width).fill(0))
+                  }
+              },
+
+
+
+              removeCompletedRows: function(completedRows){
+                  if(completedRows.length == 0) return;
+                  let rowNumber = completedRows[0];
+                  if(gameModel.gameGrid[rowNumber].filter(e => e != 2).length > 0) 
+                        view.highLightCompletedCell(rowNumber);
+                  else {
+                        gameModel.gameStack.splice(rowNumber,1);
+                        gameModel.gameStack.splice(0,0,Array(gameModel.GAME_GRID_DIMENSIONS.width).fill(0));
+                        gameModel.gameGrid[rowNumber].fill(0);                        
+                        completedRows.shift();                        
                   }
               },
 
@@ -456,6 +501,11 @@
                   gameModel.frameCount++;
                  
                   view.drawGrid();
+                  gameController.updateCompletedRows();                        
+                  gameController.removeCompletedRows(gameModel.completedRows);
+                  gameController.updateScore(gameModel.completedRows.length);
+                  view.drawScore();   
+
                  if(gameStatus == GAME_STATES.PLAYING) {
 
                       if(gameModel.elapsedTime == 0) {
@@ -466,11 +516,7 @@
                           gameModel.elapsedTime = 0;
                           gameModel.frameCount = 0;
                           
-                          gameController.moveTetro();
-                          let completedRows = gameController.getCompletedRows();                        
-                          gameController.removeCompletedRows(completedRows);
-                          gameController.updateScore(completedRows.length);
-                          view.drawScore(); 
+                          gameController.moveTetro(); // step it down           
                       }
                  }
 
@@ -502,8 +548,6 @@
               },
 
               getTetroBlocks: function (ttype){
-                  console.log("ttype...");
-                  console.log(ttype);
                   switch(ttype) {
                       case "I" : return [[1],[1],[1],[1]];
 
@@ -523,12 +567,11 @@
                   }
               },
 
-              getCompletedRows: function(){
-                 let completedRows = [];
+              updateCompletedRows: function(){
                  for(let row =0; row < gameModel.gameStack.length; row++)
-                    if(gameModel.gameStack[row].indexOf(0) == -1) completedRows.push(row);
-                
-                 return completedRows;
+                    if(!gameModel.gameStack[row].includes(0)) 
+                        if(!gameModel.completedRows.includes(row))    
+                            gameModel.completedRows.push(row);
               },
 
               init: function() {
@@ -536,6 +579,7 @@
                   console.log("here is DISH:", this);
 
                   console.log("initializing game..");
+                  gameModel.gameStartTime = Date.now();
                   gameModel.gameScore = 0;   
                   this.initGrid();
                   this.initGameStack();
